@@ -1,0 +1,82 @@
+### Introduction
+The goal of the project is to develop a machine learning algortihm to predict how users using devices such as Jawbone Up, Nike FuelBand, and Fitbit are doing their exercise.
+
+### Getting and reading data
+
+Data are downloaded into the workspace from the URL provided by the Project Instruction
+```{r,results="hide"}
+suppressMessages(library(caret))
+suppressMessages(library(randomForest))
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "training.csv", method = "curl")
+download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "testing.csv", method = "curl")
+```
+
+Then are read into R variables. After manually inspecting the file, different null values are identified.
+
+```{r,results="hide"}
+data <- read.csv('training.csv', na.strings=c("NA","","#DIV/0!"))
+testData <- read.csv('testing.csv', na.strings=c("NA","","#DIV/0!"))
+```
+
+### Preprocessing the data
+
+Data are preprocessed in 3 steps:
+
+* the first variables ("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window","num_window") are removed because they are **not significant predictors**
+* **near zero variance predictors** are removed
+* variables that **contains almost NAs** are removed.
+
+The training dataset in splitted into **training set** and **cross validation** set using the **60/40** rule in order to estimate the out of sample error.
+
+```{r,results="hide"}
+#creating training and crossVal set
+inTrain  <- createDataPartition(y=data$classe, p=0.6,list=FALSE)
+training <- data[inTrain,8:160]
+crossVal <- data[-inTrain,8:160]
+test <- testData[8:160]
+
+#pre processing: remove near zero variance predictors
+nonNearZero <- nearZeroVar(training,saveMetrics=TRUE)$nzv==FALSE
+training2 <- training[,nonNearZero]
+crossVal2 <- crossVal[,nonNearZero]
+test2 <- test[,nonNearZero]
+
+#pre processing: removing predictors that are almost NA
+nonNA <- colSums(is.na(training2))<11000
+training3 <- training2[,nonNA]
+crossVal3 <- crossVal2[,nonNA]
+test3 <- test2[,nonNA]
+```
+
+###Training
+
+**Random Forest** is chosen as the algorithm to be used because it guarantees a **very high accuracy**. Because we perform cross validation by ourself, we set **train control** to none, in order to get **better execution time**.
+
+```{r}
+#train a random forest
+modelFit <- train(classe ~ .,data=training3,method = "rf",trControl = trainControl(method = "none"),tuneGrid = data.frame(mtry=7))
+
+```
+
+###Calculating out of sample error
+
+We use cross validation set to estimate our **out of sample error**. As we can see the expected out of sample error is pretty small, **less than 0.5%**.
+
+```{r}
+#calculating accuracy
+predictions <- predict(modelFit,crossVal3)
+cf <- confusionMatrix(predictions, crossVal3$classe)
+accuracy <- cf$overall[1]
+data.frame(accuracy = accuracy, error = 1 - accuracy)
+```
+
+### Predicting
+
+Finally, we use our model to **predict** the 20 test instances for the project submission
+
+```{r}
+#predict test set
+answers <- predict(modelFit,test3)
+as.character(answers)
+```
+
